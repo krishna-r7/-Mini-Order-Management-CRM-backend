@@ -21,9 +21,12 @@ export class ShopifyWebhookService {
     const secret = this.configService.getOrThrow<string>(
       'SHOPIFY_CLIENT_SECRET',
     );
+    console.log("secret",secret)
 
     const hmac = req.headers['x-shopify-hmac-sha256'];
     const rawBody = req.rawBody;
+   console.log("hmac",hmac)
+    console.log("rawBody",rawBody)
 
     if (!hmac || !rawBody) {
       throw new UnauthorizedException('Missing webhook signature or body');

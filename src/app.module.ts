@@ -8,6 +8,7 @@ import { ShopifyController } from './shopify/shopify.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { ShopifyWebhookController } from './shopify-webhook/shopify-webhook.controller';
 import { ShopifyWebhookService } from './shopify-webhook/shopify-webhook.service';
+import { OrdersModule } from './orders/orders.module';
 
 @Module({
     imports: [
@@ -15,6 +16,7 @@ import { ShopifyWebhookService } from './shopify-webhook/shopify-webhook.service
       isGlobal: true,
     }),
     PrismaModule,
+    OrdersModule,
   ],
   controllers: [AppController, ShopifyController, ShopifyWebhookController],
   providers: [AppService, ShopifyService, ShopifyWebhookService],

@@ -52,12 +52,16 @@ export class ShopifyService {
     const data: { access_token: string; expires_in: number } =
       await response.json();
 
+      console.log("assestoken" ,data.access_token);
+
     return data.access_token;
   }
 
 
   async getOrders() {
   const accessToken = await this.getAccessToken();
+
+  
 
   const shopDomain =
     this.configService.get<string>('SHOPIFY_STORE_DOMAIN');
@@ -181,6 +185,91 @@ async syncOrders() {
     skipped,
   };
 }
+
+
+async registerOrderWebhooks() {
+  const shopDomain = this.configService.getOrThrow<string>(
+    'SHOPIFY_STORE_DOMAIN',
+  );
+
+  const accessToken = await this.getAccessToken();
+
+  const endpoint = `https://${shopDomain}/admin/api/2026-10/graphql.json`;
+
+  const webhooks = [
+    {
+      topic: 'ORDERS_CREATE',
+      callbackUrl:
+        'https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-create',
+    },
+    {
+      topic: 'ORDERS_UPDATED',
+      callbackUrl:
+        'https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-updated',
+    },
+  ];
+
+  const results = [];
+
+  for (const webhook of webhooks) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation webhookSubscriptionCreate(
+            $topic: WebhookSubscriptionTopic!
+            $webhookSubscription: WebhookSubscriptionInput!
+          ) {
+            webhookSubscriptionCreate(
+              topic: $topic
+              webhookSubscription: $webhookSubscription
+            ) {
+              webhookSubscription {
+                id
+                topic
+                uri
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        variables: {
+          topic: webhook.topic,
+          webhookSubscription: {
+            uri: webhook.callbackUrl,
+            format: 'JSON',
+          },
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.errors?.length) {
+      throw new Error(
+        JSON.stringify(data.errors ?? data),
+      );
+    }
+
+    const result = data.data?.webhookSubscriptionCreate;
+
+    if (result?.userErrors?.length) {
+      throw new Error(JSON.stringify(result.userErrors));
+    }
+
+    results.push(result.webhookSubscription);
+  }
+
+  return { success: true, webhooks: results };
+}
+
 
 
 
