@@ -31,7 +31,7 @@ async handleOrderWebhook(req: RawBodyRequest<Request>) {
 
   try {
     const secret = this.configService.getOrThrow<string>(
-      'SHOPIFY_CLIENT_SECRET',
+      'SHOPIFY_WEBHOOK_SECRET',
     );
 
     const hmac = req.headers['x-shopify-hmac-sha256'];
