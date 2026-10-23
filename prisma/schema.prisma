@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Order {
+  id                String   @id @default(cuid())
+  shopifyOrderId    String   @unique
+  orderNumber       String
+  email             String?
+  customerName      String?
+  totalPrice        Decimal  @db.Decimal(12, 2)
+  currency          String   @default("USD")
+  financialStatus   String?
+  fulfillmentStatus String?
+  shopifyCreatedAt  DateTime?
+  shopifyUpdatedAt  DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([orderNumber])
+  @@index([email])
+  @@index([shopifyCreatedAt])
+}
