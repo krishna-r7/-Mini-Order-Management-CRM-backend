@@ -398,7 +398,8 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   Order: 'Order',
-  OrderItem: 'OrderItem'
+  OrderItem: 'OrderItem',
+  ProcessedWebhook: 'ProcessedWebhook'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -414,7 +415,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "order" | "orderItem"
+    modelProps: "order" | "orderItem" | "processedWebhook"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -566,6 +567,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ProcessedWebhook: {
+      payload: Prisma.$ProcessedWebhookPayload<ExtArgs>
+      fields: Prisma.ProcessedWebhookFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ProcessedWebhookFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ProcessedWebhookFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        findFirst: {
+          args: Prisma.ProcessedWebhookFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ProcessedWebhookFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        findMany: {
+          args: Prisma.ProcessedWebhookFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>[]
+        }
+        create: {
+          args: Prisma.ProcessedWebhookCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        createMany: {
+          args: Prisma.ProcessedWebhookCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ProcessedWebhookCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>[]
+        }
+        delete: {
+          args: Prisma.ProcessedWebhookDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        update: {
+          args: Prisma.ProcessedWebhookUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        deleteMany: {
+          args: Prisma.ProcessedWebhookDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ProcessedWebhookUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ProcessedWebhookUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>[]
+        }
+        upsert: {
+          args: Prisma.ProcessedWebhookUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ProcessedWebhookPayload>
+        }
+        aggregate: {
+          args: Prisma.ProcessedWebhookAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateProcessedWebhook>
+        }
+        groupBy: {
+          args: Prisma.ProcessedWebhookGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProcessedWebhookGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ProcessedWebhookCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ProcessedWebhookCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -640,6 +715,16 @@ export const OrderItemScalarFieldEnum = {
 } as const
 
 export type OrderItemScalarFieldEnum = (typeof OrderItemScalarFieldEnum)[keyof typeof OrderItemScalarFieldEnum]
+
+
+export const ProcessedWebhookScalarFieldEnum = {
+  id: 'id',
+  webhookId: 'webhookId',
+  topic: 'topic',
+  processedAt: 'processedAt'
+} as const
+
+export type ProcessedWebhookScalarFieldEnum = (typeof ProcessedWebhookScalarFieldEnum)[keyof typeof ProcessedWebhookScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -894,6 +979,7 @@ export type PrismaClientOptions = PrismaClientOptionsWithAccelerateUrl | PrismaC
 export type GlobalOmitConfig = {
   order?: Prisma.OrderOmit
   orderItem?: Prisma.OrderItemOmit
+  processedWebhook?: Prisma.ProcessedWebhookOmit
 }
 
 /* Types for Logging */

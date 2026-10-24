@@ -79,6 +79,9 @@ export class OrdersService {
   async findOne(id: string) {
     return this.prisma.order.findUnique({
       where: { id },
+      include: {
+        items: true,
+      },
     });
   }
 }

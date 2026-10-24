@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   Injectable,
@@ -39,7 +38,6 @@ export class ShopifyWebhookService {
     return this.updateOrder(order, webhookId);
   }
 
-
   private verifyWebhook(req: RawBodyRequest<Request>) {
     const topic = req.headers['x-shopify-topic'];
     const webhookId = req.headers['x-shopify-webhook-id'];
@@ -54,9 +52,7 @@ export class ShopifyWebhookService {
     });
 
     if (typeof hmac !== 'string' || !rawBody) {
-      throw new UnauthorizedException(
-        'Missing webhook signature or body',
-      );
+      throw new UnauthorizedException('Missing webhook signature or body');
     }
 
     const secret = this.configService.getOrThrow<string>(
@@ -74,9 +70,7 @@ export class ShopifyWebhookService {
       received.length !== expected.length ||
       !timingSafeEqual(received, expected)
     ) {
-      throw new UnauthorizedException(
-        'Invalid Shopify webhook signature',
-      );
+      throw new UnauthorizedException('Invalid Shopify webhook signature');
     }
 
     let order: any;
@@ -95,12 +89,18 @@ export class ShopifyWebhookService {
   }
 
   // Create handler: idempotent, so webhook retries do not duplicate orders
-  private async createOrder(order: any, webhookId: string | string[] | undefined) {
+  private async createOrder(
+    order: any,
+    webhookId: string | string[] | undefined,
+  ) {
     return this.saveOrderAndItems(order, webhookId, 'create');
   }
 
   // Update handler: synchronizes existing data and ignores older events
-  private async updateOrder(order: any, webhookId: string | string[] | undefined) {
+  private async updateOrder(
+    order: any,
+    webhookId: string | string[] | undefined,
+  ) {
     return this.saveOrderAndItems(order, webhookId, 'update');
   }
 
@@ -110,16 +110,17 @@ export class ShopifyWebhookService {
     webhookId: string | string[] | undefined,
     operation: 'create' | 'update',
   ) {
+
+    if (typeof webhookId !== 'string' || !webhookId.trim()) {
+      throw new BadRequestException('Missing Shopify webhook ID');
+    }
     const shopifyOrderId = String(order.id);
 
     const incomingUpdatedAt = order.updated_at
       ? new Date(order.updated_at)
       : null;
 
-    if (
-      incomingUpdatedAt &&
-      Number.isNaN(incomingUpdatedAt.getTime())
-    ) {
+    if (incomingUpdatedAt && Number.isNaN(incomingUpdatedAt.getTime())) {
       throw new BadRequestException('Invalid order updated_at timestamp');
     }
 
@@ -141,9 +142,7 @@ export class ShopifyWebhookService {
         !Number.isFinite(price) ||
         price < 0
       ) {
-        throw new BadRequestException(
-          'Invalid line item quantity or price',
-        );
+        throw new BadRequestException('Invalid line item quantity or price');
       }
 
       return {
@@ -160,6 +159,15 @@ export class ShopifyWebhookService {
       };
     });
 
+
+    const incomingCreatedAt = order.created_at
+      ? new Date(order.created_at)
+      : null;
+
+    if (incomingCreatedAt && Number.isNaN(incomingCreatedAt.getTime())) {
+      throw new BadRequestException('Invalid order created_at timestamp');
+    }
+
     const orderData = {
       orderNumber: String(order.name ?? order.order_number ?? ''),
       email: order.email ?? order.customer?.email ?? null,
@@ -168,79 +176,133 @@ export class ShopifyWebhookService {
       currency: order.currency ?? 'USD',
       financialStatus: order.financial_status ?? null,
       fulfillmentStatus: order.fulfillment_status ?? null,
-      shopifyCreatedAt: order.created_at
-        ? new Date(order.created_at)
-        : null,
+      shopifyCreatedAt: incomingCreatedAt,
       shopifyUpdatedAt: incomingUpdatedAt,
     };
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.order.findUnique({
-        where: { shopifyOrderId },
-        select: {
-          id: true,
-          shopifyUpdatedAt: true,
-        },
-      });
+    let result: {
+      orderId: string;
+      skipped: boolean;
+      reason?: string;
+    };
 
-      // Do not allow an older webhook to overwrite newer stored data.
-      if (
-        existing?.shopifyUpdatedAt &&
-        incomingUpdatedAt &&
-        existing.shopifyUpdatedAt.getTime() >
-          incomingUpdatedAt.getTime()
-      ) {
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        // 1. Register this delivery inside the same transaction.
+        // The unique webhookId constraint protects concurrent duplicates.
+        if (typeof webhookId === 'string' && webhookId.length > 0) {
+          await tx.processedWebhook.create({
+            data: {
+              webhookId,
+              topic:
+                operation === 'create' ? 'orders/create' : 'orders/updated',
+            },
+          });
+        }
+
+        // 2. Check the existing order and its stored timestamp.
+        const existing = await tx.order.findUnique({
+          where: { shopifyOrderId },
+          select: {
+            id: true,
+            shopifyUpdatedAt: true,
+          },
+        });
+
+        // 3. Ignore older events, but commit their delivery ID as processed.
+        if (
+          existing?.shopifyUpdatedAt &&
+          incomingUpdatedAt &&
+          existing.shopifyUpdatedAt.getTime() > incomingUpdatedAt.getTime()
+        ) {
+          return {
+            orderId: existing.id,
+            skipped: true,
+            reason: 'Older webhook event',
+          };
+        }
+
+        // 4. Create or update the order.
+        const saved = await tx.order.upsert({
+          where: { shopifyOrderId },
+          create: {
+            shopifyOrderId,
+            ...orderData,
+          },
+          update: orderData,
+        });
+
+        // 5. Remove line items no longer present in the payload.
+        const incomingIds = lineItems.map(
+          (item: (typeof lineItems)[number]) => item.shopifyLineItemId,
+        );
+
+        await tx.orderItem.deleteMany({
+          where: {
+            orderId: saved.id,
+            ...(incomingIds.length > 0
+              ? { shopifyLineItemId: { notIn: incomingIds } }
+              : {}),
+          },
+        });
+
+        // 6. Upsert the current line items.
+        for (const item of lineItems) {
+          await tx.orderItem.upsert({
+            where: {
+              orderId_shopifyLineItemId: {
+                orderId: saved.id,
+                shopifyLineItemId: item.shopifyLineItemId,
+              },
+            },
+            create: {
+              ...item,
+              orderId: saved.id,
+            },
+            update: item,
+          });
+        }
+
         return {
-          orderId: existing.id,
+          orderId: saved.id,
+          skipped: false,
+        };
+      });
+    } catch (error: unknown) {
+      // A concurrent delivery may win the unique webhookId insert.
+      const dbError = error as {
+        code?: string;
+        meta?: { target?: unknown };
+      };
+
+      const target = JSON.stringify(dbError.meta?.target ?? '');
+
+      if (
+        dbError.code === 'P2002' &&
+        target.includes('webhookId') &&
+        typeof webhookId === 'string'
+      ) {
+        console.log('[Shopify Webhook] Duplicate delivery ignored', {
+          webhookId,
+          shopifyOrderId,
+        });
+
+        return {
+          success: true,
+          operation,
           skipped: true,
-          reason: 'Older webhook event',
+          reason: 'Duplicate webhook delivery',
         };
       }
 
-      const saved = await tx.order.upsert({
-        where: { shopifyOrderId },
-        create: {
-          shopifyOrderId,
-          ...orderData,
-        },
-        update: orderData,
+      console.error('[Shopify Webhook] Database processing failed', {
+        operation,
+        shopifyOrderId,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
 
-      const incomingIds = lineItems.map(
-        (item: any) => item.shopifyLineItemId,
-      );
-
-      // Remove items absent from the latest complete Shopify payload.
-      await tx.orderItem.deleteMany({
-        where: {
-          orderId: saved.id,
-          ...(incomingIds.length > 0
-            ? { shopifyLineItemId: { notIn: incomingIds } }
-            : {}),
-        },
-      });
-
-      for (const item of lineItems) {
-        await tx.orderItem.upsert({
-          where: {
-            orderId_shopifyLineItemId: {
-              orderId: saved.id,
-              shopifyLineItemId: item.shopifyLineItemId,
-            },
-          },
-          create: {
-            ...item,
-            orderId: saved.id,
-          },
-          update: item,
-        });
-      }
-
-      return {
-        orderId: saved.id,
-        skipped: false,
-      };
-    });
+      throw error;
+    }
 
     console.log('[Shopify Webhook] Processing complete', {
       operation,

@@ -50,3 +50,10 @@ model OrderItem {
   @@index([shopifyProductId])
   @@index([sku])
 }
+
+model ProcessedWebhook {
+  id          String   @id @default(cuid())
+  webhookId   String   @unique
+  topic       String
+  processedAt DateTime @default(now())
+}

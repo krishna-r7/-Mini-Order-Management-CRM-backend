@@ -49,3 +49,8 @@ export type Order = Prisma.OrderModel
  * 
  */
 export type OrderItem = Prisma.OrderItemModel
+/**
+ * Model ProcessedWebhook
+ * 
+ */
+export type ProcessedWebhook = Prisma.ProcessedWebhookModel
