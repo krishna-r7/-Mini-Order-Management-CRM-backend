@@ -1,114 +1,229 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Mini Order Management CRM --- Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A NestJS backend for a Shopify-integrated Order Management CRM. It
+stores Shopify orders and line items in PostgreSQL using Prisma, exposes
+order-management APIs, and processes Shopify order creation and update
+webhooks.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Live Demo
 
-## Description
+**Frontend:** https://order-crm.netlify.app/
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+**Backend API:** https://mini-order-management-crm-backend.onrender.com
 
-## Project setup
+The frontend is deployed on Netlify and connects to the NestJS backend for order listing, searching, filtering, pagination, and order details.
 
-```bash
-$ npm install
+Shopify order creation and update events are handled by the backend through configured webhooks.
+
+## Tech Stack
+
+-   NestJS
+-   TypeScript
+-   PostgreSQL
+-   Prisma ORM
+-   Shopify Webhooks
+-   HMAC-SHA256 webhook signature verification
+
+## Features
+
+-   Store Shopify orders and line items in PostgreSQL.
+-   Process `orders/create` and `orders/updated` webhook events.
+-   Verify Shopify webhook signatures using the raw request body.
+-   Avoid duplicate webhook processing using a unique webhook ID.
+-   Ignore older order-update events when a newer version is already
+    stored.
+-   Use database transactions when saving an order and its line items.
+-   Support order listing, searching, filtering, pagination, and order
+    details through the application's order API.
+
+## Prerequisites
+
+-   Node.js (use a version supported by the project's `package.json`)
+-   npm
+-   PostgreSQL
+-   A Shopify development store and a Shopify app configured to send
+    order webhooks
+
+## Getting Started
+
+### 1. Install dependencies
+
+``` bash
+npm install
 ```
 
-## Compile and run the project
+### 2. Configure environment variables
 
-```bash
-# development
-$ npm run start
+Create a `.env` file in the backend project root. Use the variable names
+expected by your application and never commit real credentials.
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+``` env
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE?schema=public"
+SHOPIFY_WEBHOOK_SECRET="your_shopify_webhook_signing_secret"
 ```
 
-## Run tests
+`SHOPIFY_WEBHOOK_SECRET` must be the secret used to sign the webhooks
+sent to this backend. Do not confuse it with a Shopify Admin API access
+token.
 
-```bash
-# unit tests
-$ npm run test
+### 3. Apply Prisma migrations
 
-# e2e tests
-$ npm run test:e2e
+Run the migration command used by this repository. For a standard Prisma
+project, this is commonly:
 
-# test coverage
-$ npm run test:cov
+``` bash
+npx prisma migrate deploy
 ```
+
+For local development when creating new migrations, use:
+
+``` bash
+npx prisma migrate dev
+```
+
+If your project uses a different Prisma v7 configuration or migration
+workflow, follow the existing project configuration.
+
+### 4. Start the backend
+
+Development:
+
+``` bash
+npm run start:dev
+```
+
+Production build:
+
+``` bash
+npm run build
+npm run start:prod
+```
+
+Check `package.json` for the exact scripts available in this repository.
+
+## Shopify Webhook Configuration
+
+Configure the Shopify app to send these topics to the deployed backend:
+
+  ------------------------------------------------------------------------------------------------------------------------------
+  Topic                               Endpoint
+  ----------------------------------- ------------------------------------------------------------------------------------------
+  `orders/create`                     `https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-create`
+
+  `orders/updated`                    `https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-updated`
+  ------------------------------------------------------------------------------------------------------------------------------
+
+The backend must receive the original request body so it can verify the
+Shopify HMAC signature. The application configures NestJS with
+`rawBody: true`.
+
+Ensure the Shopify app has the required order-reading permission and
+that the webhook subscriptions are active. Shopify webhook delivery and
+the backend's successful database processing should be monitored
+separately.
+
+## Order Synchronization Flow
+
+1.  Shopify sends an order creation or update webhook.
+2.  The backend validates the webhook signature.
+3.  The payload is parsed and validated.
+4.  A database transaction records the webhook ID and creates or updates
+    the order and line items.
+5.  Duplicate deliveries are skipped, and older order updates are
+    ignored.
+
+Webhooks provide event-driven synchronization. If the project needs
+stronger recovery from missed deliveries, consider adding periodic
+reconciliation between Shopify and PostgreSQL.
+
+## API Documentation
+
+The exact order API routes depend on the controllers in this repository.
+Check the NestJS controllers for the available endpoints and request
+parameters, including pagination, search, filtering, and order details.
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+The backend is deployed on Render:
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+`https://mini-order-management-crm-backend.onrender.com`
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+Set `DATABASE_URL` and `SHOPIFY_WEBHOOK_SECRET` in the Render
+environment configuration. Do not store secrets in source control. After
+deployment, verify the service is healthy and confirm webhook
+subscriptions point to the deployed endpoints.
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Error Handling and Reliability
 
-## Observability
+-   Invalid webhook signatures are rejected.
+-   Invalid JSON or payload fields are rejected.
+-   Duplicate webhook deliveries are handled using the unique webhook
+    ID.
+-   Order and line-item changes are grouped in a database transaction.
+-   Database failures are logged and propagated so the request does not
+    falsely report success.
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+Shopify may retry failed webhook deliveries, but retries alone do not
+guarantee that every order will eventually be synchronized. Monitor
+failures and consider a reconciliation process for recovery.
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+## Security Notes
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+-   Keep `.env` out of version control.
+-   Never publish Shopify secrets or database credentials.
+-   Verify webhook signatures against the raw request body.
+-   Use HTTPS for deployed webhook endpoints.
+-   Grant only the Shopify permissions the app needs.
 
-## Resources
+## Project Structure
 
-Check out a few resources that may come in handy when working with NestJS:
+Typical NestJS areas include:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+-   `src/` --- application source
+-   Shopify webhook controller/service --- webhook routes and processing
+-   Prisma service/module --- database access
+-   `prisma/` --- schema and migrations
 
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Use the actual folder and file names in this repository if they differ.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Add the applicable license if this project is distributed publicly.
+
+
+
+## Shopify Order Sync API
+
+### Purpose
+
+The Sync API allows the application to synchronize Shopify order data with the PostgreSQL database for testing and order management.
+
+### Endpoint
+
+`POST /shopify/sync`
+
+**Base URL:** `https://mini-order-management-crm-backend.onrender.com`
+
+### Testing
+
+1. Send a POST request to the Sync API using Postman.
+2. Check the response for synchronization status and any errors.
+3. Verify that the corresponding orders and line items are stored in PostgreSQL.
+4. Open the CRM frontend and confirm the synchronized orders appear.
+
+**Note:** Replace `/shopify/syncorders` with the actual route configured in your backend. This endpoint should only be documented as available if it is implemented.
+
+
+
+### Setting Up a New PostgreSQL Database
+
+1. Create an empty PostgreSQL database.
+2. Configure `DATABASE_URL` in the backend `.env` file.
+3. Install project dependencies using `npm install`.
+4. Generate the Prisma client using `npx prisma generate`.
+5. Apply committed database migrations using `npx prisma migrate deploy`.
+6. Start the backend using `npm run start:dev`.
+
+Prisma migrations create the required tables, relationships, indexes, and constraints. No manual table creation should be necessary when all required migration files are included in the repository.
+
+**Important:** Do not use `prisma migrate reset` on a database containing data you need to preserve, because it resets the database and can delete data.
