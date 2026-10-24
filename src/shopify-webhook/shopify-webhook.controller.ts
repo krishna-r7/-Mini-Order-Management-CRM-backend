@@ -14,7 +14,7 @@ export class ShopifyWebhookController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    await this.webhookService.handleOrderWebhook(req);
+    await this.webhookService.handleOrderCreated(req);
     return res.json({ received: true });
   }
 
@@ -24,7 +24,7 @@ export class ShopifyWebhookController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    await this.webhookService.handleOrderWebhook(req);
+    await this.webhookService.handleOrderUpdated(req);
     return res.json({ received: true });
   }
 }

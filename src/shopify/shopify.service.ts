@@ -58,10 +58,9 @@ export class ShopifyService {
   }
 
 
-  async getOrders() {
-  const accessToken = await this.getAccessToken();
 
-  
+async getOrders() {
+  const accessToken = await this.getAccessToken();
 
   const shopDomain =
     this.configService.get<string>('SHOPIFY_STORE_DOMAIN');
@@ -86,20 +85,40 @@ export class ShopifyService {
   return data.orders.map((order: any) => ({
     shopifyOrderId: String(order.id),
     orderNumber: String(order.name),
-    email: order.email,
+    email: order.email ?? null,
+
     customerName: order.customer
       ? `${order.customer.first_name ?? ''} ${order.customer.last_name ?? ''}`.trim()
       : null,
-    totalPrice: order.total_price,
+
+    totalPrice: String(order.total_price),
     currency: order.currency,
-    financialStatus: order.financial_status,
-    fulfillmentStatus: order.fulfillment_status,
+    financialStatus: order.financial_status ?? null,
+    fulfillmentStatus: order.fulfillment_status ?? null,
+
     shopifyCreatedAt: order.created_at,
     shopifyUpdatedAt: order.updated_at,
+
+    items: (order.line_items ?? []).map((item: any) => ({
+      shopifyLineItemId: String(item.id),
+
+      shopifyProductId:
+        item.product_id != null ? String(item.product_id) : null,
+
+      shopifyVariantId:
+        item.variant_id != null ? String(item.variant_id) : null,
+
+      title: item.title || 'Unknown product',
+      sku: item.sku || null,
+      quantity: Number(item.quantity),
+      unitPrice: String(item.price),
+
+      totalPrice: (
+        Number(item.price) * Number(item.quantity)
+      ).toFixed(2),
+    })),
   }));
 }
-
-
 
 async syncOrders() {
   const orders = await this.getOrders();
@@ -136,14 +155,50 @@ async syncOrders() {
       ? new Date(order.shopifyUpdatedAt).getTime()
       : null;
 
-    // Skip orders that haven't changed in Shopify.
-    if (existingMap.has(order.shopifyOrderId) &&
-      existingUpdatedAt === incomingUpdatedAt) {
+    // Skip only when the order is unchanged AND products
+    // have already been imported.
+    let shouldSkip = false;
+
+    if (
+      existingMap.has(order.shopifyOrderId) &&
+      existingUpdatedAt === incomingUpdatedAt
+    ) {
+      const existingOrder = await this.prisma.order.findUnique({
+        where: {
+          shopifyOrderId: order.shopifyOrderId,
+        },
+        select: {
+          id: true,
+          items: {
+            select: {
+              shopifyLineItemId: true,
+            },
+          },
+        },
+      });
+
+      const existingItemIds = new Set(
+        (existingOrder?.items ?? []).map(
+          (item) => item.shopifyLineItemId,
+        ),
+      );
+
+      const allItemsExist =
+        existingOrder !== null &&
+        existingItemIds.size === order.items.length &&
+        order.items.every((item: any) =>
+          existingItemIds.has(item.shopifyLineItemId),
+        );
+
+      shouldSkip = allItemsExist;
+    }
+
+    if (shouldSkip) {
       skipped++;
       continue;
     }
 
-    const data = {
+    const orderData = {
       orderNumber: order.orderNumber,
       email: order.email,
       customerName: order.customerName,
@@ -151,23 +206,75 @@ async syncOrders() {
       currency: order.currency,
       financialStatus: order.financialStatus,
       fulfillmentStatus: order.fulfillmentStatus,
+
       shopifyCreatedAt: order.shopifyCreatedAt
         ? new Date(order.shopifyCreatedAt)
         : null,
+
       shopifyUpdatedAt: order.shopifyUpdatedAt
         ? new Date(order.shopifyUpdatedAt)
         : null,
     };
 
-    await this.prisma.order.upsert({
-      where: {
-        shopifyOrderId: order.shopifyOrderId,
-      },
-      update: data,
-      create: {
-        shopifyOrderId: order.shopifyOrderId,
-        ...data,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const savedOrder = await tx.order.upsert({
+        where: {
+          shopifyOrderId: order.shopifyOrderId,
+        },
+        update: orderData,
+        create: {
+          shopifyOrderId: order.shopifyOrderId,
+          ...orderData,
+        },
+      });
+
+      const incomingItemIds = order.items.map(
+        (item: any) => item.shopifyLineItemId,
+      );
+
+      // Delete line items no longer present in Shopify.
+      await tx.orderItem.deleteMany({
+        where: {
+          orderId: savedOrder.id,
+          shopifyLineItemId: {
+            notIn: incomingItemIds,
+          },
+        },
+      });
+
+      // Upsert every product line item.
+      for (const item of order.items) {
+        await tx.orderItem.upsert({
+          where: {
+            orderId_shopifyLineItemId: {
+              orderId: savedOrder.id,
+              shopifyLineItemId: item.shopifyLineItemId,
+            },
+          },
+
+          update: {
+            shopifyProductId: item.shopifyProductId,
+            shopifyVariantId: item.shopifyVariantId,
+            title: item.title,
+            sku: item.sku,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+          },
+
+          create: {
+            shopifyLineItemId: item.shopifyLineItemId,
+            shopifyProductId: item.shopifyProductId,
+            shopifyVariantId: item.shopifyVariantId,
+            title: item.title,
+            sku: item.sku,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            orderId: savedOrder.id,
+          },
+        });
+      }
     });
 
     if (existingMap.has(order.shopifyOrderId)) {
@@ -187,88 +294,12 @@ async syncOrders() {
 }
 
 
-async registerOrderWebhooks() {
-  const shopDomain = this.configService.getOrThrow<string>(
-    'SHOPIFY_STORE_DOMAIN',
-  );
 
-  const accessToken = await this.getAccessToken();
 
-  const endpoint = `https://${shopDomain}/admin/api/2026-10/graphql.json`;
 
-  const webhooks = [
-    {
-      topic: 'ORDERS_CREATE',
-      callbackUrl:
-        'https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-create',
-    },
-    {
-      topic: 'ORDERS_UPDATED',
-      callbackUrl:
-        'https://mini-order-management-crm-backend.onrender.com/webhooks/shopify/orders-updated',
-    },
-  ];
 
-  const results = [];
 
-  for (const webhook of webhooks) {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': accessToken,
-      },
-      body: JSON.stringify({
-        query: `
-          mutation webhookSubscriptionCreate(
-            $topic: WebhookSubscriptionTopic!
-            $webhookSubscription: WebhookSubscriptionInput!
-          ) {
-            webhookSubscriptionCreate(
-              topic: $topic
-              webhookSubscription: $webhookSubscription
-            ) {
-              webhookSubscription {
-                id
-                topic
-                uri
-              }
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-        `,
-        variables: {
-          topic: webhook.topic,
-          webhookSubscription: {
-            uri: webhook.callbackUrl,
-            format: 'JSON',
-          },
-        },
-      }),
-    });
 
-    const data = await response.json();
-
-    if (!response.ok || data.errors?.length) {
-      throw new Error(
-        JSON.stringify(data.errors ?? data),
-      );
-    }
-
-    const result = data.data?.webhookSubscriptionCreate;
-
-    if (result?.userErrors?.length) {
-      throw new Error(JSON.stringify(result.userErrors));
-    }
-
-    results.push(result.webhookSubscription);
-  }
-
-  return { success: true, webhooks: results };
-}
 
 
 

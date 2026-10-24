@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   NotFoundException,
+  Query,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 
@@ -11,9 +12,19 @@ import { OrdersService } from './orders.service';
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
-  @Get()
-  findAll() {
-    return this.ordersService.findAll();
+ @Get()
+  findAll(
+    @Query("search") search?: string,
+    @Query("status") status?: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.ordersService.findAll({
+      search,
+      status,
+      page,
+      limit,
+    });
   }
 
   @Get(':id')
